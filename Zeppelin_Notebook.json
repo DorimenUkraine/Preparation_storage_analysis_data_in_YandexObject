@@ -1,0 +1,625 @@
+{
+  "paragraphs": [
+    {
+      "text": "%md\n\n### Первичная загрузка данных\nМы будем анализировать данные от трех популярных сенсоров: sds11 (датчик пыли), dht22 (датчик влажности и температуры) и bme280 (датчик влажности, давления и температуры).\n\nМы возьмем сжатые csv-архивы как есть из директории ```s3://dataproc-breathe/by_months/*csv.gzip```, построем для каждого из датчиков свою отдельную схему данных, прочитаем их в один DataFrame и запишем в структурированную parquet-таблицы по пути ```s3://dataproc-breathe/input/{sds11,dht22,bme280.parquet}```.\n",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:33:02+0000",
+      "config": {
+        "tableHide": false,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true,
+          "completionKey": "TAB",
+          "completionSupport": false
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/markdown",
+        "fontSize": 9,
+        "editorHide": true,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h3>Первичная загрузка данных</h3>\n<p>Мы будем анализировать данные от трех популярных сенсоров: sds11 (датчик пыли), dht22 (датчик влажности и температуры) и bme280 (датчик влажности, давления и температуры).</p>\n<p>Мы возьмем сжатые csv-архивы как есть из директории <code>s3://dataproc-breathe/by_months/*csv.gzip</code>, построем для каждого из датчиков свою отдельную схему данных, прочитаем их в один DataFrame и запишем в структурированную parquet-таблицы по пути <code>s3://dataproc-breathe/input/{sds11,dht22,bme280.parquet}</code>.</p>\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391870_491769584",
+      "id": "20200707-091438_1502844767",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "dateStarted": "2020-07-13T08:33:02+0000",
+      "dateFinished": "2020-07-13T08:33:02+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "focus": true,
+      "$$hashKey": "object:296"
+    },
+    {
+      "text": "%spark\n\n/*\n * В этом параграфе мы перекладываем данные сенсоров bme280 из множества csv файлов в одну parquet таблицу.\n * В дальнейшем с такой таблицей будет удобней работать, т.к. такой формат поддерживает большое число движков.\n * Он эффективней хранит данные и эффективней обрабатывает их.\n */\n\n\nimport org.apache.spark.sql.SparkSession\nimport org.apache.spark.sql.functions.{year,month}\nimport org.apache.spark.sql.types.{StringType,DoubleType,StructType,StructField,LongType,IntegerType,TimestampType,DateType}\n\n/*\n * Явно описываем какую структуру данных ожидаем увидеть на входе из csv файлов.\n * Третий параметр говорит о том, может ли значение быть Nullable.\n * Строки с NULL'ами в важных колонках (sensor_id, location, timestamp) пропускаем, т.к. не понятно к какой точке и позиции они относятся.\n */\nval schema = new StructType()\n    .add(StructField(\"sensor_id\", StringType, false))\n    .add(StructField(\"sensor_type\", StringType, false))\n    .add(StructField(\"location\", StringType, false))\n    .add(StructField(\"lat\", DoubleType, false))\n    .add(StructField(\"lon\", DoubleType, false))\n    .add(StructField(\"timestamp\", TimestampType, false))\n    .add(StructField(\"pressure\", DoubleType, true))\n    .add(StructField(\"altitude\", DoubleType, true))\n    .add(StructField(\"pressure_sealevel\", DoubleType, true))\n    .add(StructField(\"temperature\", DoubleType, true))\n    .add(StructField(\"humidity\", DoubleType, true))\n\n/*\n * Создаем новый DataFrame, описываем его как CSV, описываем основные параметры: разделитель, заголовок первой строкой и схему данных)\n * В методе .load идет непосредственная загрузка данных в DataFrame.\n * В методе .withColumn добавляем новую колонку \"дата\" к имеющимся данным, она будет необходима для партиционирования.\n */\nvar df = spark.read.format(\"csv\")\n    .option(\"delimiter\", \";\")\n    .option(\"header\", true)\n    .schema(schema)\n    .load(\"s3a://dataproc-breathe/by_months/*_bme280.csv.gz\")\n    .withColumn(\"date\", to_date(col(\"timestamp\")))\n\n\n/*\n * Созданный DataFrame записываем обратно в S3-compatible object-storage для сохранности.\n * Сохраняем данные уже в оптимальном колоночном формате parquet (наиболее популярный) и применяем сжатие gzip на колонки.\n * Явно указываем по какому столбцу будем партиционировать, чтобы можно было делать запросы по конкретным датам, не перебирая весь dataset.\n * Итоговая таблица будет лежать в бакете dataproc-breathe, в директории input/bme280.parquet\n */\ndf.write.option(\"compression\", \"gzip\")\n    .mode(\"overwrite\")\n    .partitionBy(\"date\")\n    .parquet(\"s3a://dataproc-breathe/input/bme280.parquet\")",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:34:47+0000",
+      "config": {
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/scala",
+        "fontSize": 12,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "import org.apache.spark.sql.SparkSession\nimport org.apache.spark.sql.functions.{year, month}\nimport org.apache.spark.sql.types.{StringType, DoubleType, StructType, StructField, LongType, IntegerType, TimestampType, DateType}\nschema: org.apache.spark.sql.types.StructType = StructType(StructField(sensor_id,StringType,false), StructField(sensor_type,StringType,false), StructField(location,StringType,false), StructField(lat,DoubleType,false), StructField(lon,DoubleType,false), StructField(timestamp,TimestampType,false), StructField(pressure,DoubleType,true), StructField(altitude,DoubleType,true), StructField(pressure_sealevel,DoubleType,true), StructField(temperature,DoubleType,true), StructField(humidity,DoubleType,true))\ndf: org.apache.spark.sql.DataFrame = [sensor_id: string, sensor_type..."
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391877_20299324",
+      "id": "20200707-091431_1705824843",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "status": "READY",
+      "errorMessage": "",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:297"
+    },
+    {
+      "text": "%spark\n\nimport org.apache.spark.sql.types.{StringType,DoubleType,StructType,StructField,LongType,TimestampType}\n\n/*\n * Аналогично определяем общую схему данных, только уже с новыми колонками\n */\nval schema = new StructType()\n    .add(StructField(\"sensor_id\", StringType, false))\n    .add(StructField(\"sensor_type\", StringType, false))\n    .add(StructField(\"location\", StringType, false))\n    .add(StructField(\"lat\", DoubleType, false))\n    .add(StructField(\"lon\", DoubleType, false))\n    .add(StructField(\"timestamp\", StringType, false))\n    .add(StructField(\"P1\", DoubleType, true))\n    .add(StructField(\"durP1\", LongType, true))\n    .add(StructField(\"ratioP1\", DoubleType, true))\n    .add(StructField(\"P2\", DoubleType, true))\n    .add(StructField(\"durP2\", LongType, true))\n    .add(StructField(\"ratioP2\", DoubleType, true))\n\n/* \n * В сырых данных по этому датчику есть два формата timestamp.\n * В части csv файлов передается число секунд с момента unix epoch, а в части число миллисекунд.\n * Из-за этого мы сразу не можем сделат правильную колонку и поэтому читаем её с типом StringType\n * Дальше, с помощью метода .withColumn к созданному DataFrame добавляем новую колонку timestamp, где пытаемся привести timestamp к типу TimestampType.\n * Если не получилось, то делим на 1000 (число миллисекунд в одной секунде) и снова кастуем к TimestampType.\n * В результате мы сделали небольшой data preparation на сломанных данных.\n */\nvar df = spark.read.format(\"csv\")\n    .option(\"delimiter\", \";\")\n    .option(\"header\", true)\n    .schema(schema)\n    .load(\"s3a://dataproc-breathe/by_months/*_sds011.csv.gz\")\n    .withColumn(\"ts\", \n        when(\n            col(\"timestamp\").cast(TimestampType).isNull,\n            (col(\"timestamp\")/1000).cast(TimestampType)\n        ).otherwise(col(\"timestamp\").cast(TimestampType))\n    )\n    .withColumn(\"date\", to_date(col(\"ts\")))\n    .drop(\"timestamp\")\n\n/* \n * Аналогичным вызовом складываем данные в объектное хранилище.\n */\ndf.write.option(\"compression\", \"gzip\")\n    .mode(\"overwrite\")\n    .partitionBy(\"date\")\n    .parquet(\"s3a://dataproc-breathe/input/sds011.parquet\")",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:34:53+0000",
+      "config": {
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/scala",
+        "fontSize": 12,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "import org.apache.spark.sql.types.{StringType, DoubleType, StructField, LongType, TimestampType}\nschema: org.apache.spark.sql.types.StructType = StructType(StructField(sensor_id,StringType,false), StructField(sensor_type,StringType,false), StructField(location,StringType,false), StructField(lat,DoubleType,false), StructField(lon,DoubleType,false), StructField(timestamp,StringType,false), StructField(P1,DoubleType,true), StructField(durP1,LongType,true), StructField(ratioP1,DoubleType,true), StructField(P2,DoubleType,true), StructField(durP2,LongType,true), StructField(ratioP2,DoubleType,true))\ndf: org.apache.spark.sql.DataFrame = [sensor_id: string, sensor_type: string ... 11 more fields]\n"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391878_899016744",
+      "id": "20200707-091828_417422790",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "status": "READY",
+      "errorMessage": "",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:298"
+    },
+    {
+      "text": "%spark\n\nimport org.apache.spark.sql.SparkSession\nimport org.apache.spark.sql.types.{StringType,DoubleType,StructType,StructField,TimestampType}\n\n/* \n * Аналогичные шаги для датчиков DHT22\n */\n\nval schema = new StructType()\n    .add(StructField(\"sensor_id\", StringType, false))\n    .add(StructField(\"sensor_type\", StringType, false))\n    .add(StructField(\"location\", StringType, false))\n    .add(StructField(\"lat\", DoubleType, false))\n    .add(StructField(\"lon\", DoubleType, false))\n    .add(StructField(\"timestamp\", StringType, false))\n    .add(StructField(\"temperature\", DoubleType, true))\n    .add(StructField(\"humidity\", DoubleType, true))\n\nvar df = spark.read.format(\"csv\")\n    .option(\"delimiter\", \";\")\n    .option(\"header\", true)\n    .schema(schema)\n    .load(\"s3a://dataproc-breathe/by_months/*_dht22.csv.gz\")\n    .withColumn(\"ts\", \n        when(\n            col(\"timestamp\").cast(TimestampType).isNull,\n            (col(\"timestamp\")/1000).cast(TimestampType)\n        ).otherwise(col(\"timestamp\").cast(TimestampType))\n    )\n    .withColumn(\"date\", to_date(col(\"ts\")))\n    .drop(\"timestamp\")\n\ndf.write.option(\"compression\", \"gzip\")\n    .mode(\"overwrite\")\n    .partitionBy(\"date\")\n    .parquet(\"s3a://dataproc-breathe/input/dht22.parquet\")",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:34:59+0000",
+      "config": {
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/scala",
+        "fontSize": 12,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "import org.apache.spark.sql.SparkSession\nimport org.apache.spark.sql.types.{StringType, DoubleType, StructType, StructField, TimestampType}\nschema: org.apache.spark.sql.types.StructType = StructType(StructField(sensor_id,StringType,false), StructField(sensor_type,StringType,false), StructField(location,StringType,false), StructField(lat,DoubleType,false), StructField(lon,DoubleType,false), StructField(timestamp,StringType,false), StructField(temperature,DoubleType,true), StructField(humidity,DoubleType,true))\ndf: org.apache.spark.sql.DataFrame = [sensor_id: string, sensor_type: string ... 7 more fields]\n"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391880_255994134",
+      "id": "20200707-111406_809574710",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "status": "READY",
+      "errorMessage": "",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:299"
+    },
+    {
+      "text": "%md\n\n### Обогащение и объединение\nВ следующем параграфе мы возьмем три полученные таблицы, построим для них общую таблицу, где объединим данные по 20-минутным интервалам и по близким геопозициям.\n\nДля того чтобы правильно сгруппировать точки на карте мы воспользуемся бибилотекой Uber H3, которая позволяет для каждой точки на карте поставить в соотвествие гекс указанного размера, для того чтобы данные с нескольких датчиков в радиусе можно было объединить.",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-08T11:23:11+0000",
+      "config": {
+        "tableHide": false,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true,
+          "completionKey": "TAB",
+          "completionSupport": false
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/markdown",
+        "fontSize": 9,
+        "editorHide": true,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h3>Обогащение и объединение</h3>\n<p>В следующем параграфе мы возьмем три полученные таблицы, построим для них общую таблицу, где объединим данные по 20-минутным интервалам и по близким геопозициям.</p>\n<p>Для того чтобы правильно сгруппировать точки на карте мы воспользуемся бибилотекой Uber H3, которая позволяет для каждой точки на карте поставить в соотвествие гекс указанного размера, для того чтобы данные с нескольких датчиков в радиусе можно было объединить.</p>\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391881_296670277",
+      "id": "20200707-130509_1499481807",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "status": "READY",
+      "errorMessage": "",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:300"
+    },
+    {
+      "text": "%spark\n\nimport org.apache.spark.sql.SparkSession\nimport org.apache.spark.sql.types.{LongType,TimestampType}\nimport org.apache.spark.sql.functions._\nimport org.apache.spark.sql.expressions.UserDefinedFunction\nimport com.uber.h3core.H3Core\n\nvar sc = SparkSession.builder().getOrCreate()\n\n/*\n * С помощью такого блока кода мы создаем ThreadLocal инстанс h3.\n * Этот инстанс будет резолвить (широту, долготу, разрешение) в h3-индекс, по которому мы будем группировать.\n * ThreadLocal инстанс позволяет не создавать его каждый раз с нуля, минимизировать аллокацию памяти и ускорить сопоставление.\n */\n@transient lazy val h3 = new ThreadLocal[H3Core] {\n    override def initialValue() = H3Core.newInstance()\n}\n\n/*\n * Теперь мы описываем метод, который на вход принимает точку на карте, и использует h3 сопоставление.\n */\ndef convertToH3Address(xLong: Double, yLat: Double, precision: Int) = {\n    h3.get.geoToH3Address(yLat, xLong, precision)\n}\n\n/*\n * Объявляем в spark специальную UserDefinedFunction, для того чтобы её можно было применять на данные в таблице.\n */\nval geoToH3Address: UserDefinedFunction = udf(convertToH3Address _)\n\n/* \n * Создаем новый DataFrame из данных в S3\n */\nvar df_sds11_raw = spark.read.parquet(\"s3a://dataproc-breathe/input/sds011.parquet\")\n/* Создаем новую колонку в памяти для этой таблицы, в s3 она не видна.\n * Для того чтобы построить аггрегаты по 20 минутам мы специально взяли timestamp (число секунд с unix epoch), поделили на 1200 (20 минут), привели к LongType чтобы отрезать дробную часть и обратно привели к секундам.\n   В результате у нас появилась новая колонка time_interval, по которой мы будем аггрегировать все данные.\n */\nval df_sds11_filter = df_sds11_raw.withColumn(\"time_interval\", ((((col(\"ts\").cast(LongType)/1200)).cast(LongType))*1200).cast(TimestampType))\n/*\n * Создаем новую колонку polygon6_id, в которую записываем h3-index, который получили после вызова UDF.\n * Последний аргумент lit(6) создает литерал из числа 6, т.е. мы передаем точность гекса 6.\n * Точность 6 это область радиусом 3.22км в радиусе.\n * Увеличение точности уменьшает радиус.\n * Подробнее можно ознакомиться здесь https://h3geo.org/docs/core-library/restable\n */\n        .withColumn(\"polygon6_id\", geoToH3Address(col(\"lon\"), col(\"lat\"), lit(6)))\n        .select(\"time_interval\", \"polygon6_id\", \"P1\", \"P2\")\n        .registerTempTable(\"df\")\n\nval df_sds11 = sqlContext.sql(\"select time_interval as timestamp, polygon6_id, percentile_approx(P1,0.5) as P1, percentile_approx(P2,0.5) as P2, count(P1) as dust_measures from df group by time_interval, polygon6_id\")\n\n/*\n * Создаем Dataframe для датчиков bme280 и так же добавляем h3 index\n */\nval df_bme280_raw = spark.read.parquet(\"s3a://dataproc-breathe/input/bme280.parquet\")\nval df_bme280_filter = df_bme280_raw.withColumn(\"time_interval\", ((((col(\"timestamp\").cast(LongType)/1200)).cast(LongType))*1200).cast(TimestampType))\n//        .filter(col(\"date\") === lit(\"2020-05-09\"))\n        .withColumn(\"polygon6_id\", geoToH3Address(col(\"lon\"), col(\"lat\"), lit(6)))\n        .select(\"polygon6_id\", \"pressure\", \"temperature\", \"humidity\", \"time_interval\")\n\n/*\n * Создаем Dataframe для датчиков dht22, так же добавляем h3 index и добавляем нулевую колонку pressure.\n * Она необходима для того, чтобы объединить две таблицы по датчикам bme280 и dht22, чтобы аггрегаты по температуре и влажности строить уже по данным от двух видов датчиков.\n */\nval df_dht22_raw = spark.read.parquet(\"s3a://dataproc-breathe/input/dht22.parquet\")\nval df_dht22_filter = df_dht22_raw.withColumn(\"time_interval\", ((((col(\"ts\").cast(LongType)/1200)).cast(LongType))*1200).cast(TimestampType))\n//      .filter(col(\"date\") === lit(\"2020-05-09\"))\n        .withColumn(\"polygon6_id\", geoToH3Address(col(\"lon\"), col(\"lat\"), lit(6)))\n        .withColumn(\"pressure\", lit(null))\n        .select(\"polygon6_id\", \"pressure\", \"temperature\", \"humidity\", \"time_interval\")\n\n/* \n * Объединяем таблицы датчиков bme280 и dht22.\n * Регистриуем как таблицу в spark-sql.\n */\nvar df_climate_filter = df_dht22_filter.union(df_bme280_filter)\n    .registerTempTable(\"df_climate_filter\")\n\n/*\n * Не обязательно весь код писать на Scala, всегда можно переключиться на spark-sql, когда это необходимо.\n * Мы хотим посчитать медианы параметров temperature, humidity, pressure, т.к. данные с конкретных датчиков могут засшкаливать.\n * Например, один из датчиков в гексе может находиться на солнце, второй в тени. \n * Или рядом с одним из датчиков вышел человек покурить и увеличилась доля частиц пыли.\n * Поэтому внутри гекса мы будем брать медианы, чтобы сгладить такие события, для этого воспользуемся методом percentile_approx.\n * Подробнее можно посмотреть здесь http://spark.apache.org/docs/latest/api/sql/index.html#percentile_approx\n */\nval df_climate = sqlContext.sql(\"select time_interval as timestamp, polygon6_id, percentile_approx(pressure, 0.5) as pressure, percentile_approx(temperature,0.5) as temperature, percentile_approx(humidity,0.5) as humidity, count(humidity) as climate_measures from df_climate_filter group by time_interval, polygon6_id\")\n\n/*\n * Теперь из двух DataFrames делаем outerjoin, для того чтобы скелить данные по частицам пыли и погоде.\n * Outer join делаем, т.к. могут быть станции где есть датчики sds11, но не было датчиков bme280 или dht22, ну или в обратную сторону.\n * Сортируем по timestamp, polygon6_id чтобы они эффективней хранились в parquet.\n */\nval df = df_sds11.join(df_climate, Seq(\"timestamp\", \"polygon6_id\"), \"outer\")\n        .select(col(\"timestamp\"), col(\"polygon6_id\"), col(\"P1\"), col(\"P2\"), col(\"temperature\"), col(\"humidity\"), col(\"pressure\"), col(\"dust_measures\"), col(\"climate_measures\"))\n        .withColumn(\"date\", to_date(col(\"timestamp\")))\n        .orderBy(\"timestamp\", \"polygon6_id\")\n/*\n * Теперь записываем в s3 нашу итоговую аггрегированную таблицу по всему миру, которой мы можем пользоваться как справочником.\n */\nval df_output = df.write.option(\"compression\", \"gzip\")\n     .mode(\"overwrite\")\n     .partitionBy(\"date\")\n     .parquet(\"s3a://dataproc-breathe/output/archive_20min_h3p6.parquet\")",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:35:07+0000",
+      "config": {
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/scala",
+        "fontSize": 12,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "warning: there were two deprecation warnings; re-run with -deprecation for details\nimport org.apache.spark.sql.SparkSession\nimport org.apache.spark.sql.types.{LongType, TimestampType}\nimport org.apache.spark.sql.functions._\nimport org.apache.spark.sql.expressions.UserDefinedFunction\nimport com.uber.h3core.H3Core\nsc: org.apache.spark.sql.SparkSession = org.apache.spark.sql.SparkSession@1e2ec6b2\nh3: ThreadLocal[com.uber.h3core.H3Core] = <lazy>\nconvertToH3Address: (xLong: Double, yLat: Double, precision: Int)String\ngeoToH3Address: org.apache.spark.sql.expressions.UserDefinedFunction = UserDefinedFunction(<function3>,StringType,Some(List(DoubleType, DoubleType, IntegerType)))\ndf_sds11_raw: org.apache.spark.sql.DataFrame = [sensor_id: string, sensor_type: string ... 11 more fields]\ndf_sds11_filter: Unit = ()\ndf_sds11: org.apache.spark.sql.DataFrame = [timestamp: timestamp,..."
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391882_144242638",
+      "id": "20200707-142532_1085170786",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "status": "READY",
+      "errorMessage": "",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:301"
+    },
+    {
+      "text": "%md\n\n### Группировка по станциям с окном в 5 минут\nМы разбили карту мира на гексы и для конкретных областей построили значения в 20-минутных интервалах, теперь давайте посмотрим на аналогичную аггрегацию уже по станциям.\nЭто полезно для владельцев конкретных станций.",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-08T11:23:11+0000",
+      "config": {
+        "tableHide": false,
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true,
+          "completionKey": "TAB",
+          "completionSupport": false
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/markdown",
+        "fontSize": 9,
+        "editorHide": true,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<h3>Группировка по станциям с окном в 5 минут</h3>\n<p>Мы разбили карту мира на гексы и для конкретных областей построили значения в 20-минутных интервалах, теперь давайте посмотрим на аналогичную аггрегацию уже по станциям.<br/>Это полезно для владельцев конкретных станций.</p>\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391883_560194370",
+      "id": "20200707-143639_357291315",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "status": "READY",
+      "errorMessage": "",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:302"
+    },
+    {
+      "text": "%spark\n\nimport org.apache.spark.sql.types.{LongType,TimestampType}\n\n/* \n * Формируем DataFrame df_climate сразу из двух таблиц bme280 и dht22.\n * Добавляем в таблицу dht22 пустую колонку pressure перед объединением.\n * Группируем по пяти-минутным интервалам и идентификаторам сенсоров.\n */\n\nval df_climate = spark.read.parquet(\"s3a://dataproc-breathe/input/bme280.parquet\")\n        .withColumn(\"time_interval\", ((((col(\"timestamp\").cast(LongType)/300)).cast(LongType))*300).cast(TimestampType))\n        .select(\"sensor_id\", \"location\", \"lat\", \"lon\", \"temperature\", \"humidity\", \"pressure\", \"time_interval\")\n        .union(\n            spark.read.parquet(\"s3a://dataproc-breathe/input/dht22.parquet\")\n                // .filter(col(\"date\") === lit(\"2020-05-09\"))\n                .withColumn(\"time_interval\", ((((col(\"ts\").cast(LongType)/300)).cast(LongType))*300).cast(TimestampType))\n                .withColumn(\"pressure\", lit(null))\n                .select(\"sensor_id\", \"location\", \"lat\", \"lon\", \"temperature\", \"humidity\", \"pressure\", \"time_interval\")\n            )\n        .groupBy(\"time_interval\", \"sensor_id\")\n        .agg(avg(\"temperature\").as(\"temperature\"), avg(\"humidity\").as(\"humidity\"), last(\"pressure\").as(\"pressure\"), last(\"location\").as(\"location\"))\n        .drop(\"sensor_id\")\n\n/* \n * Создаем DataFrame по таблице sds11 и\n * группируем по пяти-минутным интервалам и идентификаторам сенсоров.\n */\n\n        \nvar df_sds11 = spark.read.parquet(\"s3a://dataproc-breathe/input/sds011.parquet\")\n        .withColumn(\"time_interval\", ((((col(\"ts\").cast(LongType)/300)).cast(LongType))*300).cast(TimestampType))\n        .select(\"sensor_id\", \"location\", \"lat\", \"lon\", \"P1\", \"P2\", \"time_interval\")\n        .groupBy(\"time_interval\", \"sensor_id\")\n        .agg(avg(\"P1\").as(\"P1\"), avg(\"P2\").as(\"P2\"), last(\"lat\").as(\"lat\"), last(\"lon\").as(\"lon\"), last(\"location\").as(\"location\"))\n\n/*\n * Делаем join по двум таблицам с 5-минутными аггрегатами по локации и временному интервалу\n */\n\nval df_merged = df_climate.join(df_sds11, Seq(\"time_interval\", \"location\"))\n        .select(col(\"location\"), col(\"lat\"), col(\"lon\"), col(\"time_interval\").as(\"timestamp\"), col(\"P1\"), col(\"P2\"), col(\"temperature\"), col(\"humidity\"), col(\"pressure\"))\n        .withColumn(\"date\", to_date(col(\"timestamp\")))\n        .orderBy(\"date\", \"timestamp\", \"location\")\n\n/*\n * Выгружаем витрину в s3 в архивную таблицу.\n */\n\ndf_merged.write.option(\"compression\", \"gzip\")\n     .mode(\"overwrite\")\n     .partitionBy(\"date\")\n     .parquet(\"s3a://dataproc-breathe/output/archive_5min_stations.parquet\")",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:35:14+0000",
+      "config": {
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/scala",
+        "fontSize": 12,
+        "results": {},
+        "enabled": true
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "import org.apache.spark.sql.types.{LongType, TimestampType}\ndf_climate: org.apache.spark.sql.DataFrame = [time_interval: timestamp, temperature: double ... 3 more fields]\ndf_sds11: org.apache.spark.sql.DataFrame = [time_interval: timestamp, sensor_id: string ... 5 more fields]\ndf_merged: org.apache.spark.sql.Dataset[org.apache.spark.sql.Row] = [location: string, lat: double ... 8 more fields]\n"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391884_-1406298298",
+      "id": "20200707-173126_1146406609",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "dateStarted": "2020-07-08T11:30:07+0000",
+      "dateFinished": "2020-07-08T12:38:53+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:303"
+    },
+    {
+      "text": "%md\n\nПостроим еще два справочника для Data Lens",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-09T07:14:55+0000",
+      "config": {
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true,
+          "completionKey": "TAB",
+          "completionSupport": false
+        },
+        "colWidth": 12,
+        "editorMode": "ace/mode/markdown",
+        "fontSize": 9,
+        "results": {},
+        "enabled": true,
+        "editorHide": true,
+        "tableHide": false
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<p>Построим еще два справочника для Data Lens</p>\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594207391886_-427499139",
+      "id": "20200708-073415_153362410",
+      "dateCreated": "2020-07-08T11:23:11+0000",
+      "dateStarted": "2020-07-09T07:14:55+0000",
+      "dateFinished": "2020-07-09T07:14:57+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:304"
+    },
+    {
+      "text": "%spark\n\nimport org.apache.spark.sql.SparkSession\nimport org.apache.spark.sql.types.{LongType,TimestampType,FloatType,StringType}\n\nimport org.apache.spark.sql.expressions.UserDefinedFunction\nimport com.uber.h3core.H3Core\nimport com.uber.h3core.util.GeoCoord\nimport scala.collection.JavaConverters._\n\nvar sc = SparkSession.builder().getOrCreate()\n\n@transient lazy val h3 = new ThreadLocal[H3Core] {\n    override def initialValue() = H3Core.newInstance()\n}\n\ndef convertToH3Address(xLong: Double, yLat: Double, precision: Int): String = {\n    h3.get.geoToH3Address(yLat, xLong, precision)\n}\n\ndef convertToH3Boundaries(xLong: Double, yLat: Double, precision: Int): List[List[Double]] = {\n    h3.get.h3ToGeoBoundary(h3.get.geoToH3Address(yLat, xLong, precision)).asScala.toList.map((x: GeoCoord) => List(x.lat, x.lng))\n}\n\nval geoToH3Address: UserDefinedFunction = udf(convertToH3Address _)\nval geoToH3Boundaries: UserDefinedFunction = udf(convertToH3Boundaries _)\n\n/*\n * Для построения словаря d_point возьмём данные из 5минтной витрины, построим аггрегат по location и для каждой пары lat / lon построим h3 координаты.\n * Опишем полигоны с несколькими уровнями точности 6, 7, 8, 9 и так же выведем их границы в отдельных столбцах.\n */\n\nvar df = spark.read.parquet(\"s3a://dataproc-breathe/output/archive_5min_stations.parquet\")\n    .filter(col(\"location\").cast(LongType).isNotNull)\n    .filter(col(\"lat\").cast(FloatType).isNotNull)\n    .filter(col(\"lon\").cast(FloatType).isNotNull)\n    .select(col(\"location\"), col(\"lat\"), col(\"lon\"), col(\"timestamp\"))\n    .orderBy(\"location\", \"timestamp\")\n    .groupBy(\"location\")\n    .agg(last(\"lat\").as(\"lat\"), last(\"lon\").as(\"lon\"))\n    .withColumn(\"geopoint\", array(col(\"lat\"), col(\"lon\")).cast(StringType))\n    .withColumn(\"polygon9_id\", conv(geoToH3Address(col(\"lon\"), col(\"lat\"), lit(9)), 16, 10))\n    .withColumn(\"polygon9\",  concat(lit(\"[\"), geoToH3Boundaries(col(\"lon\"), col(\"lat\"), lit(9)).cast(StringType), lit(\"]\")))\n    .withColumn(\"polygon8_id\", conv(geoToH3Address(col(\"lon\"), col(\"lat\"), lit(8)), 16, 10))\n    .withColumn(\"polygon8\",  concat(lit(\"[\"), geoToH3Boundaries(col(\"lon\"), col(\"lat\"), lit(8)).cast(StringType), lit(\"]\")))\n    .withColumn(\"polygon7_id\", conv(geoToH3Address(col(\"lon\"), col(\"lat\"), lit(7)), 16, 10))\n    .withColumn(\"polygon7\",  concat(lit(\"[\"), geoToH3Boundaries(col(\"lon\"), col(\"lat\"), lit(7)).cast(StringType), lit(\"]\")))\n    .withColumn(\"polygon6_id\", conv(geoToH3Address(col(\"lon\"), col(\"lat\"), lit(6)), 16, 10))\n    .withColumn(\"polygon6\",  concat(lit(\"[\"), geoToH3Boundaries(col(\"lon\"), col(\"lat\"), lit(6)).cast(StringType), lit(\"]\")))\n\n/*\n * Общее количество сенсоров небольшое, поэтому специально сераилзуем запись и не будем партиционировать.\n * Запишем в одну табличку d_point.parquet.\n */\nvar df_out = df.coalesce(1).write.option(\"compression\", \"gzip\")\n    .mode(\"overwrite\")\n    .parquet(\"s3a://dataproc-breathe/output/d_point.parquet\")",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:35:21+0000",
+      "config": {
+        "colWidth": 12,
+        "fontSize": 12,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "import org.apache.spark.sql.SparkSession\nimport org.apache.spark.sql.types.{LongType, TimestampType, FloatType, StringType}\nimport org.apache.spark.sql.expressions.UserDefinedFunction\nimport com.uber.h3core.H3Core\nimport com.uber.h3core.util.GeoCoord\nimport scala.collection.JavaConverters._\nsc: org.apache.spark.sql.SparkSession = org.apache.spark.sql.SparkSession@386aaf54\nh3: ThreadLocal[com.uber.h3core.H3Core] = <lazy>\nconvertToH3Address: (xLong: Double, yLat: Double, precision: Int)String\nconvertToH3Boundaries: (xLong: Double, yLat: Double, precision: Int)List[List[Double]]\ngeoToH3Address: org.apache.spark.sql.expressions.UserDefinedFunction = UserDefinedFunction(<function3>,StringType,Some(List(DoubleType, DoubleType, IntegerType)))\ngeoToH3Boundaries: org.apache.spark.sql.expressions..."
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594278895754_547680747",
+      "id": "20200709-071455_1780838867",
+      "dateCreated": "2020-07-09T07:14:55+0000",
+      "dateStarted": "2020-07-09T07:39:28+0000",
+      "dateFinished": "2020-07-09T07:41:51+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:305"
+    },
+    {
+      "text": "%md\n\nОтлично, мы построили все необходимые таблицы, давайте теперь выгрузим их в ClickHouse\n\nПеред экспортом данных необходимо в Clickhouse создать схемы для таблиц. Общий DDL:\n```\nCREATE TABLE breathe.point_5min_avg\n(\n    `location` UInt64,\n    `lat` Float64,\n    `lon` Float64,\n    `timestamp` DateTime,\n    `P1` Nullable(Float64),\n    `P2` Nullable(Float64),\n    `temperature` Nullable(Float64),\n    `humidity` Nullable(Float64),\n    `pressure` Nullable(Float64)\n)\nENGINE = MergeTree()\nPARTITION BY toYYYYMM(timestamp)\nORDER BY (timestamp, location);\n\n\nCREATE TABLE breathe.area6_20min_median\n(\n    `timestamp` DateTime,\n    `polygon6_id` UInt64,\n    `P1` Nullable(Float64),\n    `P2` Nullable(Float64),\n    `temperature` Nullable(Float64),\n    `humidity` Nullable(Float64),\n    `pressure` Nullable(Float64),\n    `dust_measures` Nullable(UInt32),\n    `climate_measures` Nullable(UInt32)\n)\nENGINE = MergeTree()\nPARTITION BY toYYYYMM(timestamp)\nORDER BY (timestamp, polygon6_id);\n\nCREATE TABLE breathe.d_point\n(\n    `location` UInt64,\n    `lat` Float64,\n    `lon` Float64,\n    `geopoint` String,\n    `polygon9_id` UInt64,\n    `polygon9` String,\n    `polygon8_id` UInt64,\n    `polygon8` String,\n    `polygon7_id` UInt64,\n    `polygon7` String,\n    `polygon6_id` UInt64,\n    `polygon6` String\n\n)\nENGINE = MergeTree()\nORDER BY (polygon9_id,polygon8_id,polygon7_id,polygon6_id);\n\n\nCREATE TABLE breathe.d_area6\n(\n    `polygon6_id` UInt64,\n    `polygon6` String\n\n)\nENGINE = MergeTree()\nORDER BY (polygon6_id);\n```\n",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-09T10:50:43+0000",
+      "config": {
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "markdown",
+          "editOnDblClick": true,
+          "completionKey": "TAB",
+          "completionSupport": false
+        },
+        "editorMode": "ace/mode/markdown",
+        "editorHide": true,
+        "tableHide": false
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "HTML",
+            "data": "<div class=\"markdown-body\">\n<p>Отлично, мы построили все необходимые таблицы, давайте теперь выгрузим их в ClickHouse</p>\n<p>Перед экспортом данных необходимо в Clickhouse создать схемы для таблиц. Общий DDL:</p>\n<pre><code>CREATE TABLE breathe.point_5min_avg\n(\n    `location` UInt64,\n    `lat` Float64,\n    `lon` Float64,\n    `timestamp` DateTime,\n    `P1` Nullable(Float64),\n    `P2` Nullable(Float64),\n    `temperature` Nullable(Float64),\n    `humidity` Nullable(Float64),\n    `pressure` Nullable(Float64)\n)\nENGINE = MergeTree()\nPARTITION BY toYYYYMM(timestamp)\nORDER BY (timestamp, location);\n\n\nCREATE TABLE breathe.area6_20min_median\n(\n    `timestamp` DateTime,\n    `polygon6_id` UInt64,\n    `P1` Nullable(Float64),\n    `P2` Nullable(Float64),\n    `temperature` Nullable(Float64),\n    `humidity` Nullable(Float64),\n    `pressure` Nullable(Float64),\n    `dust_measures` Nullable(UInt32),\n    `climate_measures` Nullable(UInt32)\n)\nENGINE = MergeTree()\nPARTITION BY toYYYYMM(timestamp)\nORDER BY (timestamp, polygon6_id);\n\nCREATE TABLE breathe.d_point\n(\n    `location` UInt64,\n    `lat` Float64,\n    `lon` Float64,\n    `geopoint` String,\n    `polygon9_id` UInt64,\n    `polygon9` String,\n    `polygon8_id` UInt64,\n    `polygon8` String,\n    `polygon7_id` UInt64,\n    `polygon7` String,\n    `polygon6_id` UInt64,\n    `polygon6` String\n\n)\nENGINE = MergeTree()\nORDER BY (polygon9_id,polygon8_id,polygon7_id,polygon6_id);\n\n\nCREATE TABLE breathe.d_area6\n(\n    `polygon6_id` UInt64,\n    `polygon6` String\n\n)\nENGINE = MergeTree()\nORDER BY (polygon6_id);\n</code></pre>\n</div>"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594279366390_-1938323716",
+      "id": "20200709-072246_1616358091",
+      "dateCreated": "2020-07-09T07:22:46+0000",
+      "dateStarted": "2020-07-09T10:50:41+0000",
+      "dateFinished": "2020-07-09T10:50:41+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:306"
+    },
+    {
+      "text": "%spark\n\n/*\n * Читаем таблицу из объектного хранилища и сразу же его перекладываем в Clickhouse в 1 поток по 10 тысяч записей за раз\n */\nvar df = spark.read.parquet(\"s3a://dataproc-breathe/output/d_point.parquet\")\n        .write\n        .format(\"jdbc\")\n        .mode(\"append\")\n        .option(\"driver\", \"ru.yandex.clickhouse.ClickHouseDriver\")\n        .option(\"url\", \"jdbc:clickhouse://rc1c-z4qm79n8vjzrq7tn.mdb.yandexcloud.net:8443/breathe?ssl=1&sslmode=strict&sslrootcert=/srv/CA.pem\")\n        .option(\"dbtable\", \"d_point\")\n        .option(\"user\", \"breathe\")\n        .option(\"password\", \"...\")\n        .option(\"numPartitions\", 1)\n        .option(\"batchsize\", 10000)\n        .save()",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:35:33+0000",
+      "config": {
+        "colWidth": 12,
+        "fontSize": 12,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "editorMode": "ace/mode/scala",
+        "editorHide": false,
+        "tableHide": false
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "df: Unit = ()\n"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594283033139_-1900150601",
+      "id": "20200709-082353_8979476",
+      "dateCreated": "2020-07-09T08:23:53+0000",
+      "dateStarted": "2020-07-09T08:35:24+0000",
+      "dateFinished": "2020-07-09T08:35:37+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:307"
+    },
+    {
+      "text": "%spark\n/*\n * Аналогично поступаем с таблицей d_area6.\n * Таблица d_area6 это подмножество таблицы d_point, в которой просто нет части колонок.\n * Для этого прочитаем только нужные колонки и выгрузим их.\n */\nvar df = spark.read.parquet(\"s3a://dataproc-breathe/output/d_point.parquet\")\n        .select(col(\"polygon6_id\"), col(\"polygon6\"))\n        .write\n        .format(\"jdbc\")\n        .mode(\"append\")\n        .option(\"driver\", \"ru.yandex.clickhouse.ClickHouseDriver\")\n        .option(\"url\", \"jdbc:clickhouse://rc1c-z4qm79n8vjzrq7tn.mdb.yandexcloud.net:8443/breathe?ssl=1&sslmode=strict&sslrootcert=/srv/CA.pem\")\n        .option(\"dbtable\", \"d_area6\")\n        .option(\"user\", \"breathe\")\n        .option(\"password\", \"...\")\n        .option(\"numPartitions\", 1)\n        .option(\"batchsize\", 10000)\n        .save()",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:35:40+0000",
+      "config": {
+        "colWidth": 12,
+        "fontSize": 12,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "df: Unit = ()\n"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594283723980_301088610",
+      "id": "20200709-083523_70461187",
+      "dateCreated": "2020-07-09T08:35:23+0000",
+      "dateStarted": "2020-07-09T08:39:33+0000",
+      "dateFinished": "2020-07-09T08:39:36+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:308"
+    },
+    {
+      "text": "%spark\n\n/*\n * Выгружаем витрину пяти-минутных станций.\n * Т.к. таблица здесь уже большая, то увеличим число одновременных сессий для выгрузки до 8.\n * Размер батча оставим.\n * Дополнительно удаляем колонку date, т.к. это синтетическая колонка только для партиционирования.\n */\n\n var df = spark.read\n        .parquet(\"s3a://dataproc-breathe/output/archive_5min_stations.parquet\")\n        .where(col(\"lon\").isNotNull && col(\"lat\").isNotNull && col(\"location\").isNotNull && col(\"timestamp\").isNotNull)\n        .drop(\"date\")\n        .write\n        .format(\"jdbc\")\n        .mode(\"append\")\n        .option(\"driver\", \"ru.yandex.clickhouse.ClickHouseDriver\")\n        .option(\"url\", \"jdbc:clickhouse://rc1c-z4qm79n8vjzrq7tn.mdb.yandexcloud.net:8443/breathe?ssl=1&sslmode=strict&sslrootcert=/srv/CA.pem\")\n        .option(\"dbtable\", \"point_5min_avg\")\n        .option(\"user\", \"breathe\")\n        .option(\"password\", \"...\")\n        .option(\"numPartitions\", 8)\n        .option(\"batchsize\", 10000)\n        .save()\n",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:35:46+0000",
+      "config": {
+        "colWidth": 12,
+        "fontSize": 12,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "import org.apache.spark.sql.types.{LongType, TimestampType, FloatType, StringType, StructType, DateType, StructField}\ndf: Unit = ()\n"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594283973339_965266934",
+      "id": "20200709-083933_1972728286",
+      "dateCreated": "2020-07-09T08:39:33+0000",
+      "dateStarted": "2020-07-09T10:11:05+0000",
+      "dateFinished": "2020-07-09T10:20:27+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:309"
+    },
+    {
+      "text": "%spark\n\n/*\n * Выгружаем витрину 20-минутных областей.\n * Дополнительно удаляем колонку date, т.к. это синтетическая колонка только для партиционирования.\n */\n\nvar df = spark.read\n        .parquet(\"s3a://dataproc-breathe/output/archive_20min_h3p6.parquet\")\n        .where(col(\"timestamp\").isNotNull && col(\"polygon6_id\").isNotNull)\n        .withColumn(\"p6\", conv(col(\"polygon6_id\"), 16, 10))\n        .drop(\"date\")\n        .drop(\"polygon6_id\")\n        .withColumn(\"polygon6_id\", col(\"p6\"))\n        .drop(\"p6\")\n        .write\n        .format(\"jdbc\")\n        .mode(\"append\")\n        .option(\"driver\", \"ru.yandex.clickhouse.ClickHouseDriver\")\n        .option(\"url\", \"jdbc:clickhouse://rc1c-z4qm79n8vjzrq7tn.mdb.yandexcloud.net:8443/breathe?ssl=1&sslmode=strict&sslrootcert=/srv/CA.pem\")\n        .option(\"dbtable\", \"area6_20min_median\")\n        .option(\"user\", \"breathe\")\n        .option(\"password\", \"...\")\n        .option(\"numPartitions\", 16)\n        .option(\"batchsize\", 20000)\n        .save()\n",
+      "user": "anonymous",
+      "dateUpdated": "2020-07-13T08:35:51+0000",
+      "config": {
+        "colWidth": 12,
+        "fontSize": 12,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "language": "scala",
+          "editOnDblClick": false,
+          "completionKey": "TAB",
+          "completionSupport": true
+        },
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "results": {
+        "code": "SUCCESS",
+        "msg": [
+          {
+            "type": "TEXT",
+            "data": "df: Unit = ()\n"
+          }
+        ]
+      },
+      "apps": [],
+      "jobName": "paragraph_1594288441994_946798549",
+      "id": "20200709-095401_1195492842",
+      "dateCreated": "2020-07-09T09:54:01+0000",
+      "dateStarted": "2020-07-09T10:58:09+0000",
+      "dateFinished": "2020-07-09T11:02:39+0000",
+      "status": "FINISHED",
+      "progressUpdateIntervalMs": 500,
+      "$$hashKey": "object:310"
+    }
+  ],
+  "name": "Data Proc Air Quality",
+  "id": "2FDFBV8VW",
+  "noteParams": {},
+  "noteForms": {},
+  "angularObjects": {
+    "md:shared_process": [],
+    "spark:shared_process": []
+  },
+  "config": {
+    "isZeppelinNotebookCronEnable": false,
+    "looknfeel": "default",
+    "personalizedMode": "false"
+  },
+  "info": {}
+}
